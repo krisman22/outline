@@ -1,0 +1,69 @@
+# =====================================================================
+#  Outline Wiki - Docker Compose (MODE LOKAL / AKSES VIA PORT)
+#  Berdasarkan: https://docs.getoutline.com/s/hosting/doc/docker-7pfeLP5a8t
+#
+#  Layanan:
+#    - outline  : aplikasi Outline -> http://<host>:8070
+#    - postgres : database PostgreSQL 18 (tidak dibuka ke host)
+#    - redis    : cache & queue (tidak dibuka ke host)
+#
+#  Tanpa reverse proxy / SSL. Semua konfigurasi ada di ./docker.env
+# =====================================================================
+
+name: outline
+
+services:
+  outline:
+    # Disarankan pin versi, mis. docker.getoutline.com/outlinewiki/outline:1.2.0
+    image: docker.getoutline.com/outlinewiki/outline:latest
+    container_name: outline
+    env_file: ./docker.env
+    restart: unless-stopped
+    ports:
+      # "8070:3000"                -> terbuka di semua interface jaringan
+      # "127.0.0.1:8070:3000"      -> hanya dari komputer ini saja (URL=http://localhost:8070)
+      # "192.168.25.144:8070:3000" -> hanya di jaringan Wi-Fi 192.168.25.x (en0)
+      - "127.0.0.1:8070:3000"
+    volumes:
+      - storage-data:/var/lib/outline/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  redis:
+    image: redis:7-alpine
+    container_name: outline-redis
+    restart: unless-stopped
+    expose:
+      - "6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 30s
+      retries: 3
+
+  postgres:
+    image: postgres:18
+    container_name: outline-postgres
+    restart: unless-stopped
+    # POSTGRES_USER / POSTGRES_PASSWORD / POSTGRES_DB dibaca dari docker.env
+    env_file: ./docker.env
+    expose:
+      - "5432"
+    volumes:
+      # PostgreSQL 18 menyimpan data di /var/lib/postgresql/<versi>/docker
+      - database-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -d $${POSTGRES_DB} -U $${POSTGRES_USER}"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+volumes:
+  storage-data:
+  database-data:
+  redis-data:
